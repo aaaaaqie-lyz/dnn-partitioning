@@ -17,10 +17,27 @@ from rl_env import PlacementEnv
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--graph", required=True, type=Path)
-    parser.add_argument("--method", choices=["random", "greedy", "rl", "dp", "ip"], default="greedy")
+    parser.add_argument(
+        "--method",
+        choices=["random", "greedy", "greedy-aware", "rl", "dp", "ip"],
+        default="greedy",
+    )
     parser.add_argument("--episodes", type=int, default=100, help="Used for rl method")
     parser.add_argument("--epsilon", type=float, default=0.2, help="Used for rl method")
     parser.add_argument("--learning-rate", type=float, default=0.2, help="Used for rl method")
+    parser.add_argument("--cloud-penalty", type=float, default=2.0, help="Layer penalty for cloud usage (greedy-aware)")
+    parser.add_argument(
+        "--privacy-threshold",
+        type=float,
+        default=0.7,
+        help="Trust threshold to avoid cloud in greedy-aware",
+    )
+    parser.add_argument(
+        "--cross-layer-penalty",
+        type=float,
+        default=2.0,
+        help="Penalty for cross-layer communication in greedy-aware",
+    )
     parser.add_argument("--output", type=Path, help="Write split JSON to file (defaults to stdout)")
     return parser.parse_args()
 
@@ -74,6 +91,54 @@ def run_greedy(env: PlacementEnv) -> None:
         env.step(op_id, best_device)
 
 
+def is_cross_layer(env: PlacementEnv, src_device: int, dst_device: int) -> bool:
+    return env.devices[src_device].layer != env.devices[dst_device].layer
+
+
+def run_greedy_aware(env: PlacementEnv, args: argparse.Namespace) -> None:
+    env.reset()
+    layer_weights = {
+        "device": 1.0,
+        "edge": 1.2,
+        "cloud": args.cloud_penalty,
+    }
+    while not env.is_done():
+        frontier = env.frontier()
+        if not frontier:
+            break
+        op_id = min(frontier)
+        operator = env.op_map[op_id]
+        best_device = None
+        best_score = float("inf")
+        valid_devices = env.valid_devices(op_id)
+        preferred_devices = valid_devices
+        if operator.trust_requirement > args.privacy_threshold:
+            preferred_devices = [d for d in valid_devices if env.devices[d].layer != "cloud"]
+            if not preferred_devices:
+                preferred_devices = valid_devices
+
+        for device_id in preferred_devices:
+            snap = snapshot_env(env)
+            env.step(op_id, device_id)
+            base_objective = env.objective()
+            layer_penalty = layer_weights[env.devices[device_id].layer]
+            comm_penalty = 0.0
+            for pred_id in env.predecessors[op_id]:
+                if pred_id in env.assigned:
+                    pred_device = env.assigned[pred_id]
+                    if is_cross_layer(env, pred_device, device_id):
+                        comm_penalty += args.cross_layer_penalty
+            score = base_objective * layer_penalty + comm_penalty
+            if score < best_score:
+                best_score = score
+                best_device = device_id
+            restore_env(env, snap)
+
+        if best_device is None:
+            break
+        env.step(op_id, best_device)
+
+
 def select_action(
     q_table: Dict[Tuple[int, int], float],
     op_id: int,
@@ -121,6 +186,9 @@ def main() -> None:
         output = env.split_output()
     elif args.method == "greedy":
         run_greedy(env)
+        output = env.split_output()
+    elif args.method == "greedy-aware":
+        run_greedy_aware(env, args)
         output = env.split_output()
     elif args.method == "dp":
         order = env.topological_order()

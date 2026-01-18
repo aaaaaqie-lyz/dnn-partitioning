@@ -37,6 +37,13 @@ class Weights:
     gamma: float
 
 
+@dataclass
+class RewardConfig:
+    cloud_penalty: float = 5.0
+    trust_reward_weight: float = 1.0
+    cross_layer_penalty: float = 2.0
+
+
 class PlacementEnv:
     def __init__(self, graph_path: Path) -> None:
         data = json.loads(graph_path.read_text())
@@ -189,6 +196,44 @@ class PlacementEnv:
         self.assigned[op_id] = device_id
         after_obj = self.objective()
         reward = -(after_obj - before_obj)
+        return reward, self.is_done()
+
+    def step_with_reward(self, op_id: int, device_id: int, reward_config: RewardConfig) -> Tuple[float, bool]:
+        if op_id not in self.frontier():
+            return -10.0, False
+        if device_id < 0 or device_id >= len(self.devices):
+            return -10.0, False
+
+        operator = self.op_map[op_id]
+        device = self.devices[device_id]
+        compute_time = operator.compute_time[device_id]
+        projected_energy = self.device_energy[device_id] + compute_time * operator.energy_cost[device_id]
+        if projected_energy > device.energy_budget:
+            return -5.0, False
+
+        before_obj = self.objective()
+        self.device_loads[device_id] += compute_time
+        self.device_energy[device_id] = projected_energy
+
+        trust_gap = max(0.0, operator.trust_requirement - device.trust_level)
+        self.device_trust_penalty[device_id] += trust_gap * trust_gap
+
+        cross_layer_penalty = 0.0
+        for pred in self.predecessors[op_id]:
+            pred_device = self.assigned[pred]
+            if pred_device != device_id:
+                pred_output = self.op_map[pred].output_size
+                comm_latency = self.communication_latency(pred_device, device_id, pred_output)
+                self.device_loads[device_id] += comm_latency
+                if self.devices[pred_device].layer != device.layer:
+                    cross_layer_penalty -= reward_config.cross_layer_penalty
+
+        self.assigned[op_id] = device_id
+        after_obj = self.objective()
+        base_reward = -(after_obj - before_obj)
+        cloud_penalty = -reward_config.cloud_penalty if device.layer == "cloud" else 0.0
+        trust_reward = -reward_config.trust_reward_weight * (trust_gap * trust_gap)
+        reward = base_reward + cloud_penalty + trust_reward + cross_layer_penalty
         return reward, self.is_done()
 
     def valid_devices(self, op_id: int) -> List[int]:

@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from rl_env import PlacementEnv
+from rl_env import PlacementEnv, RewardConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +22,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--epsilon", type=float, default=0.2)
     parser.add_argument("--learning-rate", type=float, default=0.2)
+    parser.add_argument("--cloud-penalty", type=float, default=5.0, help="Penalty for cloud placement")
+    parser.add_argument("--trust-reward-weight", type=float, default=1.0, help="Reward weight for trust gap")
+    parser.add_argument(
+        "--cross-layer-penalty",
+        type=float,
+        default=2.0,
+        help="Penalty for cross-layer communication",
+    )
     parser.add_argument("--output", type=Path, help="Write split JSON to file (defaults to stdout)")
     return parser.parse_args()
 
@@ -38,7 +46,12 @@ def select_action(
     return best_device
 
 
-def run_episode(env: PlacementEnv, q_table: Dict[Tuple[int, int], float], args: argparse.Namespace) -> float:
+def run_episode(
+    env: PlacementEnv,
+    q_table: Dict[Tuple[int, int], float],
+    args: argparse.Namespace,
+    reward_config: RewardConfig,
+) -> float:
     env.reset()
     total_reward = 0.0
     while not env.is_done():
@@ -47,7 +60,7 @@ def run_episode(env: PlacementEnv, q_table: Dict[Tuple[int, int], float], args: 
             break
         op_id = random.choice(frontier)
         device_id = select_action(q_table, op_id, env.valid_devices(op_id), args.epsilon)
-        reward, _ = env.step(op_id, device_id)
+        reward, _ = env.step_with_reward(op_id, device_id, reward_config)
         total_reward += reward
         key = (op_id, device_id)
         old_value = q_table.get(key, 0.0)
@@ -62,9 +75,14 @@ def main() -> None:
     best_objective = float("inf")
     best_assignment = None
     start_time = time.perf_counter()
+    reward_config = RewardConfig(
+        cloud_penalty=args.cloud_penalty,
+        trust_reward_weight=args.trust_reward_weight,
+        cross_layer_penalty=args.cross_layer_penalty,
+    )
 
     for _ in range(args.episodes):
-        run_episode(env, q_table, args)
+        run_episode(env, q_table, args, reward_config)
         if env.is_done() and env.objective() < best_objective:
             best_objective = env.objective()
             best_assignment = env.split_output()

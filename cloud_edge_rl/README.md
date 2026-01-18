@@ -13,7 +13,7 @@ This folder adds a lightweight reference pipeline for **operator-level graph con
 - `rl_env.py`: Environment with constraints, communication routing, and min–max objective.
 - `train_rl.py`: Minimal Q-learning baseline that demonstrates RL-based placement.
 - `baseline_solvers.py`: DP/IP solvers for small graphs (min–max objective, same constraints).
-- `run_baselines.py`: Runs baseline placement methods (random / greedy / RL / DP / IP) and emits a split JSON.
+- `run_baselines.py`: Runs baseline placement methods (random / greedy / greedy-aware / RL / DP / IP) and emits a split JSON.
 - `sample_rl_graph.json`: A tiny example graph in the new JSON format.
 
 ## Quick start
@@ -47,6 +47,14 @@ python cloud_edge_rl/run_baselines.py \
 
 python cloud_edge_rl/run_baselines.py \
   --graph cloud_edge_rl/bert_l-3_cloud_edge.json \
+  --method greedy-aware \
+  --cloud-penalty 2.0 \
+  --privacy-threshold 0.7 \
+  --cross-layer-penalty 2.0 \
+  --output cloud_edge_rl/bert_l-3_cloud_edge_greedy_aware.json
+
+python cloud_edge_rl/run_baselines.py \
+  --graph cloud_edge_rl/bert_l-3_cloud_edge.json \
   --method random \
   --output cloud_edge_rl/bert_l-3_cloud_edge_random.json
 
@@ -62,6 +70,11 @@ python cloud_edge_rl/run_baselines.py \
 ```
 
 The scripts emit split JSON to match the repo’s original output style (device lists with `load` and `nodes`), and include `execution_time_ms`.
+
+## Cloud-avoidance strategy notes
+
+- `greedy-aware` adds layer preferences (device > edge > cloud), privacy-aware filtering (avoid cloud for high-trust operators), and cross-layer penalties when evaluating a candidate placement.
+- RL training can be configured to discourage cloud usage by adjusting `--cloud-penalty`, while `--trust-reward-weight` and `--cross-layer-penalty` weight privacy and cross-layer communication penalties in the reward.
 
 ## JSON schema (Cloud–Edge–Device)
 
