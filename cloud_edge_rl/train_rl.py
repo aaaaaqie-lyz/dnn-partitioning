@@ -7,6 +7,7 @@ import argparse
 import json
 import random
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -60,6 +61,7 @@ def main() -> None:
     q_table: Dict[Tuple[int, int], float] = {}
     best_objective = float("inf")
     best_assignment = None
+    start_time = time.perf_counter()
 
     for _ in range(args.episodes):
         run_episode(env, q_table, args)
@@ -71,6 +73,7 @@ def main() -> None:
         best_assignment = env.split_output()
 
     best_assignment["method"] = "rl"
+    best_assignment["execution_time_ms"] = (time.perf_counter() - start_time) * 1000.0
     output_text = json.dumps(best_assignment, indent=2)
     if args.output:
         args.output.write_text(output_text)

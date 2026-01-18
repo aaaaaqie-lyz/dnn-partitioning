@@ -6,16 +6,18 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from baseline_solvers import solve_dp, solve_ip
 from rl_env import PlacementEnv
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--graph", required=True, type=Path)
-    parser.add_argument("--method", choices=["random", "greedy", "rl"], default="greedy")
+    parser.add_argument("--method", choices=["random", "greedy", "rl", "dp", "ip"], default="greedy")
     parser.add_argument("--episodes", type=int, default=100, help="Used for rl method")
     parser.add_argument("--epsilon", type=float, default=0.2, help="Used for rl method")
     parser.add_argument("--learning-rate", type=float, default=0.2, help="Used for rl method")
@@ -113,15 +115,52 @@ def main() -> None:
     args = parse_args()
     env = PlacementEnv(args.graph)
 
+    start_time = time.perf_counter()
     if args.method == "random":
         run_random(env)
         output = env.split_output()
     elif args.method == "greedy":
         run_greedy(env)
         output = env.split_output()
+    elif args.method == "dp":
+        order = env.topological_order()
+        result = solve_dp(env, order)
+        output = {
+            "devices": [
+                {
+                    "id": device.device_id,
+                    "layer": device.layer,
+                    "load": result.device_loads[device.device_id],
+                    "nodes": sorted(
+                        [op_id for op_id, dev_id in result.assignment.items() if dev_id == device.device_id]
+                    ),
+                }
+                for device in env.devices
+            ],
+            "objective": result.objective,
+        }
+    elif args.method == "ip":
+        order = env.topological_order()
+        result = solve_ip(env, order)
+        output = {
+            "devices": [
+                {
+                    "id": device.device_id,
+                    "layer": device.layer,
+                    "load": result.device_loads[device.device_id],
+                    "nodes": sorted(
+                        [op_id for op_id, dev_id in result.assignment.items() if dev_id == device.device_id]
+                    ),
+                }
+                for device in env.devices
+            ],
+            "objective": result.objective,
+        }
     else:
         output = run_rl(env, args)
+    end_time = time.perf_counter()
     output["method"] = args.method
+    output["execution_time_ms"] = (end_time - start_time) * 1000.0
 
     output_text = json.dumps(output, indent=2)
     if args.output:

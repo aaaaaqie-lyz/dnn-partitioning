@@ -167,13 +167,14 @@ class PlacementEnv:
 
         operator = self.op_map[op_id]
         device = self.devices[device_id]
-        if device.energy_budget < self.device_energy[device_id]:
+        compute_time = operator.compute_time[device_id]
+        projected_energy = self.device_energy[device_id] + compute_time * operator.energy_cost[device_id]
+        if projected_energy > device.energy_budget:
             return -5.0, False
 
         before_obj = self.objective()
-        compute_time = operator.compute_time[device_id]
         self.device_loads[device_id] += compute_time
-        self.device_energy[device_id] += compute_time * operator.energy_cost[device_id]
+        self.device_energy[device_id] = projected_energy
 
         trust_gap = max(0.0, operator.trust_requirement - device.trust_level)
         self.device_trust_penalty[device_id] += trust_gap * trust_gap
@@ -201,6 +202,23 @@ class PlacementEnv:
             "device_trust_penalty": self.device_trust_penalty,
             "objective": self.objective(),
         }
+
+    def topological_order(self) -> List[int]:
+        remaining_preds = {op_id: set(preds) for op_id, preds in self.predecessors.items()}
+        available = [op_id for op_id, preds in remaining_preds.items() if not preds]
+        order: List[int] = []
+        while available:
+            op_id = min(available)
+            available.remove(op_id)
+            order.append(op_id)
+            for successor in self.successors[op_id]:
+                remaining = remaining_preds[successor]
+                remaining.discard(op_id)
+                if not remaining and successor not in order and successor not in available:
+                    available.append(successor)
+        if len(order) != len(self.op_map):
+            raise ValueError("Graph has cycles or disconnected nodes.")
+        return order
 
     def split_output(self) -> Dict:
         device_nodes: Dict[int, List[int]] = {device.device_id: [] for device in self.devices}

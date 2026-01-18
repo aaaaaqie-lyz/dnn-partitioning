@@ -12,7 +12,8 @@ This folder adds a lightweight reference pipeline for **operator-level graph con
 - `convert_paper_json.py`: Converts the paper’s JSON format into a three-tier operator-graph JSON.
 - `rl_env.py`: Environment with constraints, communication routing, and min–max objective.
 - `train_rl.py`: Minimal Q-learning baseline that demonstrates RL-based placement.
-- `run_baselines.py`: Runs baseline placement methods (random / greedy / RL) and emits a split JSON.
+- `baseline_solvers.py`: DP/IP solvers for small graphs (min–max objective, same constraints).
+- `run_baselines.py`: Runs baseline placement methods (random / greedy / RL / DP / IP) and emits a split JSON.
 - `sample_rl_graph.json`: A tiny example graph in the new JSON format.
 
 ## Quick start
@@ -48,9 +49,19 @@ python cloud_edge_rl/run_baselines.py \
   --graph cloud_edge_rl/bert_l-3_cloud_edge.json \
   --method random \
   --output cloud_edge_rl/bert_l-3_cloud_edge_random.json
+
+python cloud_edge_rl/run_baselines.py \
+  --graph cloud_edge_rl/bert_l-3_cloud_edge.json \
+  --method dp \
+  --output cloud_edge_rl/bert_l-3_cloud_edge_dp.json
+
+python cloud_edge_rl/run_baselines.py \
+  --graph cloud_edge_rl/bert_l-3_cloud_edge.json \
+  --method ip \
+  --output cloud_edge_rl/bert_l-3_cloud_edge_ip.json
 ```
 
-The scripts emit split JSON to match the repo’s original output style (device lists with `load` and `nodes`).
+The scripts emit split JSON to match the repo’s original output style (device lists with `load` and `nodes`), and include `execution_time_ms`.
 
 ## JSON schema (Cloud–Edge–Device)
 
@@ -108,7 +119,7 @@ The scripts emit split JSON to match the repo’s original output style (device 
 
 - `compute_time` and `energy_cost` are arrays aligned with device IDs.
 - Device IDs must be contiguous and match the row/column indices in the communication matrices.
-- `communication` defines direct-link latency/bandwidth. Multi-hop routing is computed by `rl_env.py` using the Cloud–Edge–Device constraints.
+- `communication` defines direct-link latency/bandwidth. Multi-hop routing is computed by `rl_env.py` using the Cloud–Edge–Device constraints, including device-to-device links under the same edge server.
 - The objective minimized is the **max** over devices of `alpha * T_d + beta * E_d + gamma * trust_penalty`.
 
 ## Split output format (mirrors original style)
@@ -130,6 +141,7 @@ The scripts emit split JSON to match the repo’s original output style (device 
       "load": 6.54,
       "nodes": [1, 2]
     }
-  ]
+  ],
+  "execution_time_ms": 42.0
 }
 ```
