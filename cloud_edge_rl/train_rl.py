@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--epsilon", type=float, default=0.2)
     parser.add_argument("--learning-rate", type=float, default=0.2)
+    parser.add_argument("--output", type=Path, help="Write split JSON to file (defaults to stdout)")
     return parser.parse_args()
 
 
@@ -61,17 +63,19 @@ def main() -> None:
 
     for _ in range(args.episodes):
         run_episode(env, q_table, args)
-        summary = env.summary()
-        if summary["objective"] < best_objective and env.is_done():
-            best_objective = summary["objective"]
-            best_assignment = summary
+        if env.is_done() and env.objective() < best_objective:
+            best_objective = env.objective()
+            best_assignment = env.split_output()
 
-    print("Best objective:", best_objective)
-    if best_assignment:
-        print("Assignment:", best_assignment["assigned"])
-        print("Device loads:", best_assignment["device_loads"])
-        print("Device energy:", best_assignment["device_energy"])
-        print("Device trust penalty:", best_assignment["device_trust_penalty"])
+    if best_assignment is None:
+        best_assignment = env.split_output()
+
+    best_assignment["method"] = "rl"
+    output_text = json.dumps(best_assignment, indent=2)
+    if args.output:
+        args.output.write_text(output_text)
+    else:
+        print(output_text)
 
 
 if __name__ == "__main__":

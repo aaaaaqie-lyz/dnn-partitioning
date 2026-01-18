@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -199,5 +199,26 @@ class PlacementEnv:
             "device_loads": self.device_loads,
             "device_energy": self.device_energy,
             "device_trust_penalty": self.device_trust_penalty,
+            "objective": self.objective(),
+        }
+
+    def split_output(self) -> Dict:
+        device_nodes: Dict[int, List[int]] = {device.device_id: [] for device in self.devices}
+        for op_id, device_id in self.assigned.items():
+            device_nodes[device_id].append(op_id)
+        for node_list in device_nodes.values():
+            node_list.sort()
+        device_entries = []
+        for device in self.devices:
+            device_entries.append(
+                {
+                    "id": device.device_id,
+                    "layer": device.layer,
+                    "load": self.device_loads[device.device_id],
+                    "nodes": device_nodes[device.device_id],
+                }
+            )
+        return {
+            "devices": device_entries,
             "objective": self.objective(),
         }
