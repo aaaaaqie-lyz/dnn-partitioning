@@ -46,6 +46,8 @@ def snapshot_env(env: PlacementEnv) -> Dict:
     return {
         "assigned": dict(env.assigned),
         "device_loads": list(env.device_loads),
+        "device_compute_loads": list(env.device_compute_loads),
+        "device_comm_loads": list(env.device_comm_loads),
         "device_energy": list(env.device_energy),
         "device_trust_penalty": list(env.device_trust_penalty),
     }
@@ -54,6 +56,8 @@ def snapshot_env(env: PlacementEnv) -> Dict:
 def restore_env(env: PlacementEnv, snapshot: Dict) -> None:
     env.assigned = dict(snapshot["assigned"])
     env.device_loads = list(snapshot["device_loads"])
+    env.device_compute_loads = list(snapshot["device_compute_loads"])
+    env.device_comm_loads = list(snapshot["device_comm_loads"])
     env.device_energy = list(snapshot["device_energy"])
     env.device_trust_penalty = list(snapshot["device_trust_penalty"])
 
@@ -198,7 +202,9 @@ def main() -> None:
                 {
                     "id": device.device_id,
                     "layer": device.layer,
-                    "load": result.device_loads[device.device_id],
+                    "compute_load": result.device_compute_loads[device.device_id],
+                    "comm_load": result.device_comm_loads[device.device_id],
+                    "total_load": result.device_loads[device.device_id],
                     "nodes": sorted(
                         [op_id for op_id, dev_id in result.assignment.items() if dev_id == device.device_id]
                     ),
@@ -215,7 +221,9 @@ def main() -> None:
                 {
                     "id": device.device_id,
                     "layer": device.layer,
-                    "load": result.device_loads[device.device_id],
+                    "compute_load": result.device_compute_loads[device.device_id],
+                    "comm_load": result.device_comm_loads[device.device_id],
+                    "total_load": result.device_loads[device.device_id],
                     "nodes": sorted(
                         [op_id for op_id, dev_id in result.assignment.items() if dev_id == device.device_id]
                     ),

@@ -75,6 +75,7 @@ class PlacementEnv:
         self.weights = Weights(**weights)
         self.bandwidth = data["communication"]["bandwidth"]
         self.latency = data["communication"]["latency"]
+        self.cloud_comm_multiplier = data.get("communication", {}).get("cloud_multiplier", 1.0)
 
         self.op_map = {op.op_id: op for op in self.operators}
         self.successors: Dict[int, List[int]] = {op.op_id: [] for op in self.operators}
@@ -88,6 +89,8 @@ class PlacementEnv:
     def reset(self) -> None:
         self.assigned: Dict[int, int] = {}
         self.device_loads = [0.0 for _ in self.devices]
+        self.device_compute_loads = [0.0 for _ in self.devices]
+        self.device_comm_loads = [0.0 for _ in self.devices]
         self.device_energy = [0.0 for _ in self.devices]
         self.device_trust_penalty = [0.0 for _ in self.devices]
 
@@ -126,6 +129,8 @@ class PlacementEnv:
             direct_latency = self._direct_comm(a, b, output_size)
             if direct_latency is None:
                 raise ValueError(f"No communication path between {a} and {b}")
+            if a == 0 or b == 0:
+                return direct_latency * self.cloud_comm_multiplier
             return direct_latency
 
         if src_device.layer == "edge" and dst_device.layer == "edge":
@@ -181,6 +186,7 @@ class PlacementEnv:
 
         before_obj = self.objective()
         self.device_loads[device_id] += compute_time
+        self.device_compute_loads[device_id] += compute_time
         self.device_energy[device_id] = projected_energy
 
         trust_gap = max(0.0, operator.trust_requirement - device.trust_level)
@@ -192,6 +198,7 @@ class PlacementEnv:
                 pred_output = self.op_map[pred].output_size
                 comm_latency = self.communication_latency(pred_device, device_id, pred_output)
                 self.device_loads[device_id] += comm_latency
+                self.device_comm_loads[device_id] += comm_latency
 
         self.assigned[op_id] = device_id
         after_obj = self.objective()
@@ -213,6 +220,7 @@ class PlacementEnv:
 
         before_obj = self.objective()
         self.device_loads[device_id] += compute_time
+        self.device_compute_loads[device_id] += compute_time
         self.device_energy[device_id] = projected_energy
 
         trust_gap = max(0.0, operator.trust_requirement - device.trust_level)
@@ -225,6 +233,7 @@ class PlacementEnv:
                 pred_output = self.op_map[pred].output_size
                 comm_latency = self.communication_latency(pred_device, device_id, pred_output)
                 self.device_loads[device_id] += comm_latency
+                self.device_comm_loads[device_id] += comm_latency
                 if self.devices[pred_device].layer != device.layer:
                     cross_layer_penalty -= reward_config.cross_layer_penalty
 
@@ -243,6 +252,8 @@ class PlacementEnv:
         return {
             "assigned": self.assigned,
             "device_loads": self.device_loads,
+            "device_compute_loads": self.device_compute_loads,
+            "device_comm_loads": self.device_comm_loads,
             "device_energy": self.device_energy,
             "device_trust_penalty": self.device_trust_penalty,
             "objective": self.objective(),
@@ -277,7 +288,9 @@ class PlacementEnv:
                 {
                     "id": device.device_id,
                     "layer": device.layer,
-                    "load": self.device_loads[device.device_id],
+                    "compute_load": self.device_compute_loads[device.device_id],
+                    "comm_load": self.device_comm_loads[device.device_id],
+                    "total_load": self.device_loads[device.device_id],
                     "nodes": device_nodes[device.device_id],
                 }
             )

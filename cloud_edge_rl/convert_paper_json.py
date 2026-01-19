@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edge-device-latency", type=float, default=1)
     parser.add_argument("--device-device-bandwidth", type=float, default=8e8)
     parser.add_argument("--device-device-latency", type=float, default=0.5)
+    parser.add_argument("--cloud-multiplier", type=float, default=2.0, help="Multiply cloud hop latency")
     return parser.parse_args()
 
 
@@ -137,7 +138,7 @@ def build_comm_matrix(
         for i, device_a in enumerate(child_devices):
             for device_b in child_devices[i + 1 :]:
                 set_link(device_a, device_b, args.device_device_bandwidth, args.device_device_latency)
-    return {"bandwidth": bandwidth, "latency": latency}
+    return {"bandwidth": bandwidth, "latency": latency, "cloud_multiplier": args.cloud_multiplier}
 
 
 def convert_graph(args: argparse.Namespace) -> Dict:

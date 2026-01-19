@@ -14,6 +14,7 @@ This folder adds a lightweight reference pipeline for **operator-level graph con
 - `train_rl.py`: Minimal Q-learning baseline that demonstrates RL-based placement.
 - `baseline_solvers.py`: DP/IP solvers for small graphs (min–max objective, same constraints).
 - `run_baselines.py`: Runs baseline placement methods (random / greedy / greedy-aware / RL / DP / IP) and emits a split JSON.
+- `plot_baselines.py`: Plots objective and max-load comparisons from split JSON outputs.
 - `sample_rl_graph.json`: A tiny example graph in the new JSON format.
 
 ## Quick start
@@ -25,7 +26,8 @@ python cloud_edge_rl/convert_paper_json.py \
   --input throughput-inputs/OperatorGraphs/bert_l-3_inference.json \
   --output cloud_edge_rl/bert_l-3_cloud_edge.json \
   --edges 2 \
-  --devices-per-edge 2
+  --devices-per-edge 2 \
+  --cloud-multiplier 2.0
 ```
 
 ### 2) Train a simple RL policy on the converted graph
@@ -69,7 +71,20 @@ python cloud_edge_rl/run_baselines.py \
   --output cloud_edge_rl/bert_l-3_cloud_edge_ip.json
 ```
 
-The scripts emit split JSON to match the repo’s original output style (device lists with `load` and `nodes`), and include `execution_time_ms`.
+The scripts emit split JSON to match the repo’s original output style (device lists with per-device loads and `nodes`), and include `execution_time_ms`.
+
+### 4) Plot baseline comparisons
+
+Requires `matplotlib` to be installed.
+
+```bash
+python cloud_edge_rl/plot_baselines.py \
+  --inputs cloud_edge_rl/bert_l-3_cloud_edge_greedy.json \
+           cloud_edge_rl/bert_l-3_cloud_edge_greedy_aware.json \
+           cloud_edge_rl/bert_l-3_cloud_edge_dp.json \
+           cloud_edge_rl/bert_l-3_cloud_edge_ip.json \
+  --output cloud_edge_rl/baseline_comparison.png
+```
 
 ## Cloud-avoidance strategy notes
 
@@ -122,7 +137,8 @@ The scripts emit split JSON to match the repo’s original output style (device 
   ],
   "communication": {
     "bandwidth": [[0, 1000000000, 0], [1000000000, 0, 500000000], [0, 500000000, 0]],
-    "latency": [[0, 8, 0], [8, 0, 1], [0, 1, 0]]
+    "latency": [[0, 8, 0], [8, 0, 1], [0, 1, 0]],
+    "cloud_multiplier": 2.0
   },
   "weights": {"alpha": 1.0, "beta": 0.1, "gamma": 0.5}
 }
@@ -132,10 +148,12 @@ The scripts emit split JSON to match the repo’s original output style (device 
 
 - `compute_time` and `energy_cost` are arrays aligned with device IDs.
 - Device IDs must be contiguous and match the row/column indices in the communication matrices.
-- `communication` defines direct-link latency/bandwidth. Multi-hop routing is computed by `rl_env.py` using the Cloud–Edge–Device constraints, including device-to-device links under the same edge server.
+- `communication` defines direct-link latency/bandwidth. Multi-hop routing is computed by `rl_env.py` using the Cloud–Edge–Device constraints, including device-to-device links under the same edge server. Set `cloud_multiplier` to inflate hops that traverse cloud.
 - The objective minimized is the **max** over devices of `alpha * T_d + beta * E_d + gamma * trust_penalty`.
 
 ## Split output format (mirrors original style)
+
+Each device reports compute, communication, and total load so you can see cloud-avoidance effects explicitly.
 
 ```json
 {
@@ -145,13 +163,17 @@ The scripts emit split JSON to match the repo’s original output style (device 
     {
       "id": 0,
       "layer": "cloud",
-      "load": 3.21,
+      "compute_load": 2.0,
+      "comm_load": 1.21,
+      "total_load": 3.21,
       "nodes": [0, 3, 7]
     },
     {
       "id": 1,
       "layer": "edge",
-      "load": 6.54,
+      "compute_load": 5.0,
+      "comm_load": 1.54,
+      "total_load": 6.54,
       "nodes": [1, 2]
     }
   ],

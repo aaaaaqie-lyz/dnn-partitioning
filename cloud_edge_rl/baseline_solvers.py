@@ -13,6 +13,8 @@ from rl_env import PlacementEnv
 class SolverResult:
     assignment: Dict[int, int]
     device_loads: List[float]
+    device_compute_loads: List[float]
+    device_comm_loads: List[float]
     device_energy: List[float]
     device_trust_penalty: List[float]
     objective: float
@@ -32,6 +34,8 @@ def _apply_assignment(
     device_id: int,
     assignment: Dict[int, int],
     loads: List[float],
+    compute_loads: List[float],
+    comm_loads: List[float],
     energy: List[float],
     trust_penalty: List[float],
 ) -> Optional[Tuple[List[float], List[float], List[float]]]:
@@ -44,10 +48,13 @@ def _apply_assignment(
         return None
 
     new_loads = list(loads)
+    new_compute = list(compute_loads)
+    new_comm = list(comm_loads)
     new_energy = list(energy)
     new_trust = list(trust_penalty)
 
     new_loads[device_id] += compute_time
+    new_compute[device_id] += compute_time
     new_energy[device_id] = projected_energy
 
     trust_gap = max(0.0, operator.trust_requirement - device.trust_level)
@@ -57,15 +64,17 @@ def _apply_assignment(
         pred_device = assignment[pred]
         if pred_device != device_id:
             pred_output = env.op_map[pred].output_size
-            new_loads[device_id] += env.communication_latency(pred_device, device_id, pred_output)
+            comm_latency = env.communication_latency(pred_device, device_id, pred_output)
+            new_loads[device_id] += comm_latency
+            new_comm[device_id] += comm_latency
 
-    return new_loads, new_energy, new_trust
+    return new_loads, new_compute, new_comm, new_energy, new_trust
 
 
 def solve_dp(env: PlacementEnv, order: List[int]) -> SolverResult:
     cache: Dict[Tuple[int, Tuple[int, ...]], SolverResult] = {}
 
-    def recurse(index: int, assignment: Dict[int, int], loads, energy, trust) -> SolverResult:
+    def recurse(index: int, assignment: Dict[int, int], loads, compute_loads, comm_loads, energy, trust) -> SolverResult:
         key = (index, tuple(assignment.get(op_id, -1) for op_id in order[:index]))
         if key in cache:
             return cache[key]
@@ -74,6 +83,8 @@ def solve_dp(env: PlacementEnv, order: List[int]) -> SolverResult:
             result = SolverResult(
                 assignment=dict(assignment),
                 device_loads=list(loads),
+                device_compute_loads=list(compute_loads),
+                device_comm_loads=list(comm_loads),
                 device_energy=list(energy),
                 device_trust_penalty=list(trust),
                 objective=_objective(env.weights, loads, energy, trust),
@@ -84,12 +95,12 @@ def solve_dp(env: PlacementEnv, order: List[int]) -> SolverResult:
         op_id = order[index]
         best_result: Optional[SolverResult] = None
         for device_id in range(len(env.devices)):
-            updated = _apply_assignment(env, op_id, device_id, assignment, loads, energy, trust)
+            updated = _apply_assignment(env, op_id, device_id, assignment, loads, compute_loads, comm_loads, energy, trust)
             if updated is None:
                 continue
-            new_loads, new_energy, new_trust = updated
+            new_loads, new_compute, new_comm, new_energy, new_trust = updated
             assignment[op_id] = device_id
-            candidate = recurse(index + 1, assignment, new_loads, new_energy, new_trust)
+            candidate = recurse(index + 1, assignment, new_loads, new_compute, new_comm, new_energy, new_trust)
             assignment.pop(op_id)
             if best_result is None or candidate.objective < best_result.objective:
                 best_result = candidate
@@ -98,6 +109,8 @@ def solve_dp(env: PlacementEnv, order: List[int]) -> SolverResult:
             best_result = SolverResult(
                 assignment=dict(assignment),
                 device_loads=list(loads),
+                device_compute_loads=list(compute_loads),
+                device_comm_loads=list(comm_loads),
                 device_energy=list(energy),
                 device_trust_penalty=list(trust),
                 objective=_objective(env.weights, loads, energy, trust),
@@ -111,13 +124,15 @@ def solve_dp(env: PlacementEnv, order: List[int]) -> SolverResult:
         [0.0 for _ in env.devices],
         [0.0 for _ in env.devices],
         [0.0 for _ in env.devices],
+        [0.0 for _ in env.devices],
+        [0.0 for _ in env.devices],
     )
 
 
 def solve_ip(env: PlacementEnv, order: List[int]) -> SolverResult:
     best_result: Optional[SolverResult] = None
 
-    def recurse(index: int, assignment: Dict[int, int], loads, energy, trust) -> None:
+    def recurse(index: int, assignment: Dict[int, int], loads, compute_loads, comm_loads, energy, trust) -> None:
         nonlocal best_result
         current_obj = _objective(env.weights, loads, energy, trust)
         if best_result is not None and current_obj >= best_result.objective:
@@ -126,6 +141,8 @@ def solve_ip(env: PlacementEnv, order: List[int]) -> SolverResult:
             candidate = SolverResult(
                 assignment=dict(assignment),
                 device_loads=list(loads),
+                device_compute_loads=list(compute_loads),
+                device_comm_loads=list(comm_loads),
                 device_energy=list(energy),
                 device_trust_penalty=list(trust),
                 objective=current_obj,
@@ -136,17 +153,19 @@ def solve_ip(env: PlacementEnv, order: List[int]) -> SolverResult:
 
         op_id = order[index]
         for device_id in range(len(env.devices)):
-            updated = _apply_assignment(env, op_id, device_id, assignment, loads, energy, trust)
+            updated = _apply_assignment(env, op_id, device_id, assignment, loads, compute_loads, comm_loads, energy, trust)
             if updated is None:
                 continue
-            new_loads, new_energy, new_trust = updated
+            new_loads, new_compute, new_comm, new_energy, new_trust = updated
             assignment[op_id] = device_id
-            recurse(index + 1, assignment, new_loads, new_energy, new_trust)
+            recurse(index + 1, assignment, new_loads, new_compute, new_comm, new_energy, new_trust)
             assignment.pop(op_id)
 
     recurse(
         0,
         {},
+        [0.0 for _ in env.devices],
+        [0.0 for _ in env.devices],
         [0.0 for _ in env.devices],
         [0.0 for _ in env.devices],
         [0.0 for _ in env.devices],
@@ -156,6 +175,8 @@ def solve_ip(env: PlacementEnv, order: List[int]) -> SolverResult:
         best_result = SolverResult(
             assignment={},
             device_loads=[0.0 for _ in env.devices],
+            device_compute_loads=[0.0 for _ in env.devices],
+            device_comm_loads=[0.0 for _ in env.devices],
             device_energy=[0.0 for _ in env.devices],
             device_trust_penalty=[0.0 for _ in env.devices],
             objective=0.0,
