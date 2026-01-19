@@ -28,6 +28,7 @@ class Operator:
     output_size: float
     energy_cost: List[float]
     trust_requirement: float
+    criticality: float
 
 
 @dataclass
@@ -67,6 +68,7 @@ class PlacementEnv:
                 output_size=op["output_size"],
                 energy_cost=op["energy_cost"],
                 trust_requirement=op["trust_requirement"],
+                criticality=op.get("criticality", 1.0),
             )
             for op in data["operators"]
         ]
@@ -76,6 +78,7 @@ class PlacementEnv:
         self.bandwidth = data["communication"]["bandwidth"]
         self.latency = data["communication"]["latency"]
         self.cloud_comm_multiplier = data.get("communication", {}).get("cloud_multiplier", 1.0)
+        self.dependency_weight_scale = data.get("communication", {}).get("dependency_weight_scale", 1e-9)
 
         self.op_map = {op.op_id: op for op in self.operators}
         self.successors: Dict[int, List[int]] = {op.op_id: [] for op in self.operators}
@@ -164,6 +167,15 @@ class PlacementEnv:
 
         raise ValueError(f"Unsupported communication route from {src} to {dst}")
 
+    def dependency_weight(self, src: int, dst: int) -> float:
+        output_size = self.op_map[src].output_size
+        criticality = getattr(self.op_map[dst], "criticality", 1.0)
+        return output_size * criticality
+
+    def scaled_comm_latency(self, src: int, dst: int, output_size: float, dependency_weight: float) -> float:
+        base_latency = self.communication_latency(src, dst, output_size)
+        return base_latency * (1.0 + self.dependency_weight_scale * dependency_weight)
+
     def objective(self) -> float:
         per_device = [
             self.weights.alpha * load + self.weights.beta * energy + self.weights.gamma * trust
@@ -196,7 +208,8 @@ class PlacementEnv:
             pred_device = self.assigned[pred]
             if pred_device != device_id:
                 pred_output = self.op_map[pred].output_size
-                comm_latency = self.communication_latency(pred_device, device_id, pred_output)
+                dep_weight = self.dependency_weight(pred, op_id)
+                comm_latency = self.scaled_comm_latency(pred_device, device_id, pred_output, dep_weight)
                 self.device_loads[device_id] += comm_latency
                 self.device_comm_loads[device_id] += comm_latency
 
@@ -231,11 +244,12 @@ class PlacementEnv:
             pred_device = self.assigned[pred]
             if pred_device != device_id:
                 pred_output = self.op_map[pred].output_size
-                comm_latency = self.communication_latency(pred_device, device_id, pred_output)
+                dep_weight = self.dependency_weight(pred, op_id)
+                comm_latency = self.scaled_comm_latency(pred_device, device_id, pred_output, dep_weight)
                 self.device_loads[device_id] += comm_latency
                 self.device_comm_loads[device_id] += comm_latency
                 if self.devices[pred_device].layer != device.layer:
-                    cross_layer_penalty -= reward_config.cross_layer_penalty
+                    cross_layer_penalty -= reward_config.cross_layer_penalty * (1.0 + dep_weight)
 
         self.assigned[op_id] = device_id
         after_obj = self.objective()

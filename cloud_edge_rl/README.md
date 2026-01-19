@@ -27,7 +27,9 @@ python cloud_edge_rl/convert_paper_json.py \
   --output cloud_edge_rl/bert_l-3_cloud_edge.json \
   --edges 2 \
   --devices-per-edge 2 \
-  --cloud-multiplier 2.0
+  --cloud-multiplier 2.0 \
+  --dependency-weight-scale 1e-9 \
+  --criticality-default 1.0
 ```
 
 ### 2) Train a simple RL policy on the converted graph
@@ -90,6 +92,7 @@ python cloud_edge_rl/plot_baselines.py \
 
 - `greedy-aware` adds layer preferences (device > edge > cloud), privacy-aware filtering (avoid cloud for high-trust operators), and cross-layer penalties when evaluating a candidate placement.
 - RL training can be configured to discourage cloud usage by adjusting `--cloud-penalty`, while `--trust-reward-weight` and `--cross-layer-penalty` weight privacy and cross-layer communication penalties in the reward.
+- Dependency-aware placement inflates communication costs by `dependency_weight(u→v) = output_size(u) × criticality(v)` so strong dependencies favor colocation.
 
 ## JSON schema (Cloud–Edge–Device)
 
@@ -129,7 +132,8 @@ python cloud_edge_rl/plot_baselines.py \
       "compute_time": [2.0, 4.0, 8.0],
       "output_size": 4096,
       "energy_cost": [0.2, 0.4, 0.8],
-      "trust_requirement": 0.6
+      "trust_requirement": 0.6,
+      "criticality": 1.0
     }
   ],
   "edges": [
@@ -138,7 +142,8 @@ python cloud_edge_rl/plot_baselines.py \
   "communication": {
     "bandwidth": [[0, 1000000000, 0], [1000000000, 0, 500000000], [0, 500000000, 0]],
     "latency": [[0, 8, 0], [8, 0, 1], [0, 1, 0]],
-    "cloud_multiplier": 2.0
+    "cloud_multiplier": 2.0,
+    "dependency_weight_scale": 1e-9
   },
   "weights": {"alpha": 1.0, "beta": 0.1, "gamma": 0.5}
 }
@@ -149,6 +154,7 @@ python cloud_edge_rl/plot_baselines.py \
 - `compute_time` and `energy_cost` are arrays aligned with device IDs.
 - Device IDs must be contiguous and match the row/column indices in the communication matrices.
 - `communication` defines direct-link latency/bandwidth. Multi-hop routing is computed by `rl_env.py` using the Cloud–Edge–Device constraints, including device-to-device links under the same edge server. Set `cloud_multiplier` to inflate hops that traverse cloud.
+- `criticality` scales dependency weight: `dependency_weight(u→v) = output_size(u) × criticality(v)`. `dependency_weight_scale` controls how strongly that weight inflates communication cost.
 - The objective minimized is the **max** over devices of `alpha * T_d + beta * E_d + gamma * trust_penalty`.
 
 ## Split output format (mirrors original style)

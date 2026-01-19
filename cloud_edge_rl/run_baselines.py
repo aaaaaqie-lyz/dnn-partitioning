@@ -131,7 +131,8 @@ def run_greedy_aware(env: PlacementEnv, args: argparse.Namespace) -> None:
                 if pred_id in env.assigned:
                     pred_device = env.assigned[pred_id]
                     if is_cross_layer(env, pred_device, device_id):
-                        comm_penalty += args.cross_layer_penalty
+                        dep_weight = env.dependency_weight(pred_id, op_id)
+                        comm_penalty += args.cross_layer_penalty * (1.0 + dep_weight)
             score = base_objective * layer_penalty + comm_penalty
             if score < best_score:
                 best_score = score

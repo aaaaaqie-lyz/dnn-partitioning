@@ -33,7 +33,8 @@
       "compute_time": [0.4, 0.8, 1.4],
       "output_size": 2048,
       "energy_cost": [0.1, 0.2, 0.4],
-      "trust_requirement": 0.2
+      "trust_requirement": 0.2,
+      "criticality": 0.5
     },
     {
       "id": 1,
@@ -41,7 +42,8 @@
       "compute_time": [1.2, 2.0, 3.6],
       "output_size": 4096,
       "energy_cost": [0.2, 0.4, 0.8],
-      "trust_requirement": 0.6
+      "trust_requirement": 0.6,
+      "criticality": 1.2
     },
     {
       "id": 2,
@@ -49,7 +51,8 @@
       "compute_time": [0.9, 1.4, 2.5],
       "output_size": 4096,
       "energy_cost": [0.15, 0.25, 0.6],
-      "trust_requirement": 0.8
+      "trust_requirement": 0.8,
+      "criticality": 1.5
     }
   ],
   "edges": [
@@ -67,7 +70,8 @@
       [8, 0, 1],
       [0, 1, 0]
     ],
-    "cloud_multiplier": 2.0
+    "cloud_multiplier": 2.0,
+    "dependency_weight_scale": 1e-9
   },
   "weights": {
     "alpha": 1.0,

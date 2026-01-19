@@ -38,7 +38,7 @@ def _apply_assignment(
     comm_loads: List[float],
     energy: List[float],
     trust_penalty: List[float],
-) -> Optional[Tuple[List[float], List[float], List[float]]]:
+) -> Optional[Tuple[List[float], List[float], List[float], List[float], List[float]]]:
     operator = env.op_map[op_id]
     device = env.devices[device_id]
 
@@ -64,7 +64,8 @@ def _apply_assignment(
         pred_device = assignment[pred]
         if pred_device != device_id:
             pred_output = env.op_map[pred].output_size
-            comm_latency = env.communication_latency(pred_device, device_id, pred_output)
+            dep_weight = env.dependency_weight(pred, op_id)
+            comm_latency = env.scaled_comm_latency(pred_device, device_id, pred_output, dep_weight)
             new_loads[device_id] += comm_latency
             new_comm[device_id] += comm_latency
 
