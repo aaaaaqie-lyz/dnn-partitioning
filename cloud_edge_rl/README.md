@@ -79,6 +79,8 @@ The scripts emit split JSON to match the repo’s original output style (device 
 
 Requires `matplotlib` to be installed.
 
+Run the baseline scripts first to generate the split JSON files referenced below.
+
 ```bash
 python cloud_edge_rl/plot_baselines.py \
   --inputs cloud_edge_rl/bert_l-3_cloud_edge_greedy.json \
